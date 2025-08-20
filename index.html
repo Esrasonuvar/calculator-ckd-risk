@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CKD 10‑Year Mortality Risk (Cox, original units)</title>
+<style>
+  :root{--ink:#0f172a;--muted:#64748b;--line:#e5e7eb;--skin:#0ea5e9}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:24px;color:var(--ink)}
+  h1{font-size:1.35rem;margin:0 0 10px}
+  .card{border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0;box-shadow:0 2px 10px rgba(0,0,0,.04)}
+  label{display:block;margin:8px 0 4px;font-weight:600}
+  input,select{width:100%;padding:9px 10px;border:1px solid #cbd5e1;border-radius:10px}
+  .row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .row-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .muted{color:var(--muted);font-size:.92rem}
+  .btn{background:var(--skin);color:#fff;border:none;border-radius:10px;padding:11px 14px;font-weight:700;cursor:pointer}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .tag{display:inline-block;background:#f1f5f9;border:1px solid #e2e8f0;color:var(--ink);padding:3px 8px;border-radius:999px;margin-right:6px}
+  table{width:100%;border-collapse:collapse;margin-top:10px}
+  th,td{border-bottom:1px solid #eef2f7;padding:6px 8px;text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  .big{font-size:1.35rem;font-weight:800}
+  .err{color:#dc2626;margin-top:8px;white-space:pre-line}
+  .foot{margin-top:10px;color:var(--muted);font-size:.86rem}
+  canvas{width:100%;height:300px;border:1px solid #eef2f7;border-radius:8px}
+</style>
+</head>
+<body>
+<h1>CKD 10‑Year Mortality Risk (Cox)</h1>
+<div class="muted">Original‑units Cox models • Two variants: <b>with eGFR</b> and <b>no eGFR</b>. Coding: <b>Sex: 1=male, 2=female</b>. Height(m), Weight(kg), Waist/Hip(cm).</div>
+
+<div class="card">
+  <div class="row-2">
+    <div>
+      <label for="model">Model</label>
+      <select id="model">
+        <option value="with">with eGFR (better performance)</option>
+        <option value="noegfr">no eGFR</option>
+      </select>
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <span class="tag">t = 10 years</span>
+      <span id="s0tag" class="tag">S₀(10)=—</span>
+    </div>
+  </div>
+
+  <!-- AGE: ranges only (midpoint is used). Exact age input is removed. -->
+  <div class="row" style="margin-top:8px">
+    <div>
+      <label>Age (choose range)</label>
+      <select id="ageRange">
+        <option value="28">18–39</option>
+        <option value="45">40–49</option>
+        <option value="55">50–59</option>
+        <option value="65" selected>60–69</option>
+        <option value="75">70–79</option>
+        <option value="85">80–89</option>
+        <option value="92">90+</option>
+      </select>
+      <div class="muted" id="ageUsedInfo">Using range midpoint: 65</div>
+    </div>
+    <div>
+      <label>Sex</label>
+      <select id="sex">
+        <option value="1">1 = Male</option>
+        <option value="2">2 = Female</option>
+      </select>
+    </div>
+    <div></div>
+  </div>
+
+  <div class="row" style="margin-top:4px">
+    <div>
+      <label>Weight (kg)</label>
+      <input id="weight" type="number" step="0.1" min="30" max="250" value="80"/>
+      <div class="muted">Allowed: 30–250</div>
+    </div>
+    <div>
+      <label>Height (m)</label>
+      <input id="height" type="number" step="0.001" min="1.20" max="2.20" value="1.70"/>
+      <div class="muted">Allowed: 1.20–2.20</div>
+    </div>
+    <div>
+      <label>Waist (cm)</label>
+      <input id="waist" type="number" step="0.1" min="40" max="200" value="102"/>
+      <div class="muted">Allowed: 40–200</div>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:4px">
+    <div>
+      <label>Hip (cm)</label>
+      <input id="hip" type="number" step="0.1" min="40" max="200" value="108"/>
+      <div class="muted">Allowed: 40–200</div>
+    </div>
+    <div id="egfrBox">
+      <label>eGFR (CKD‑EPI, ml/min/1.73m²)</label>
+      <input id="egfr" type="number" step="0.1" min="5" max="180" value="35"/>
+      <div class="muted">Allowed: 5–180</div>
+    </div>
+  </div>
+
+  <div style="margin-top:12px">
+    <button class="btn" id="calcBtn">Calculate 10‑year risk</button>
+    <div id="err" class="err" style="display:none"></div>
+  </div>
+</div>
+
+<div class="card" id="outCard" style="display:none">
+  <div class="row-2">
+    <div>
+      <div class="muted">Linear predictor (LASI)</div>
+      <div id="lasi" class="big">—</div>
+    </div>
+    <div>
+      <div class="muted">S(10) &nbsp; / &nbsp; Risk(10)</div>
+      <div><span id="s10" class="big">—</span> &nbsp; / &nbsp; <span id="risk10" class="big">—</span></div>
+    </div>
+  </div>
+
+  <div style="margin-top:14px">
+    <div class="muted">Predicted survival (illustrative)</div>
+    <canvas id="survPlot" width="900" height="300"></canvas>
+  </div>
+
+  <div style="margin-top:14px">
+    <div class="muted">Variable contributions (β × x)</div>
+    <table id="contribTbl">
+      <thead><tr><th>Variable</th><th>value</th><th>β (orig)</th><th>β·x</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="foot">LASI = β₀ + Σ(β·x) &nbsp;&nbsp; • &nbsp;&nbsp; S(10)=S₀(10)<sup>exp(LASI)</sup> &nbsp;&nbsp; • &nbsp;&nbsp; Risk(10)=1−S(10)</div>
+  </div>
+</div>
+
+<script>
+/* =========================
+   1) ORIGINAL‑UNITS MODELS
+   =========================
+   Numbers come from your CSVs:
+   - original_units_coefficients_no_eGFR.csv
+   - original_units_coefficients_with_eGFR.csv
+   If your files have slightly different values, edit here only.
+*/
+const MODELS = {
+  noegfr: {
+    S0_10: 0.601333,         // baseline survival at 10y
+    intercept: -2.2278590331754806,
+    betas: {
+      age:    0.03530106321813986,
+      sex:   -0.27738658411919054,
+      weight:-0.012798914000775506,
+      height:-0.024274626226965823,   // per meter
+      waist:  0.022883171612144728,
+      hip:   -0.008722279348210944
+    }
+  },
+  with: {
+    S0_10: 0.619156,
+    intercept: -0.87996775575296188,
+    betas: {
+      age:    0.03564412979405369,
+      sex:   -0.2511488456425562,
+      weight:-0.008048629032302246,
+      height:-0.05502037088235011,    // if your CSV shows -0.550..., correct it here (likely -0.0550…)
+      waist:  0.019558736457447472,
+      hip:   -0.007364391680310238,
+      egfr:  -0.02158210481250613
+    }
+  }
+};
+
+// small helpers
+const fmt = (x,d=3)=>Number.isFinite(x)?x.toFixed(d):"—";
+const pct = (x,d=1)=>Number.isFinite(x)?(100*x).toFixed(d)+"%":"—";
+
+// age‑range UI
+const ageRangeSel = document.getElementById('ageRange');
+const ageUsedInfo = document.getElementById('ageUsedInfo');
+function getAgeUsed(){ return parseFloat(ageRangeSel.value); }
+function updateAgeInfo(){ ageUsedInfo.textContent = "Using range midpoint: " + ageRangeSel.value; }
+ageRangeSel.addEventListener('change', updateAgeInfo);
+updateAgeInfo();
+
+// model UI
+const modelSel = document.getElementById('model');
+const egfrBox = document.getElementById('egfrBox');
+const s0tag   = document.getElementById('s0tag');
+function refreshModelUI(){
+  const key = modelSel.value;
+  s0tag.textContent = "S₀(10)=" + MODELS[key].S0_10.toFixed(6);
+  egfrBox.style.display = (key === 'with') ? 'block' : 'none';
+}
+modelSel.addEventListener('change', refreshModelUI);
+refreshModelUI();
+
+// validation
+const errBox = document.getElementById('err');
+function mustNum(v,min,max,label,step=undefined){
+  const n = parseFloat(v);
+  if(!Number.isFinite(n) || n<min || n>max) throw `${label}: ${v} (allowed ${min}–${max})`;
+  if(step){ const tol=1e-9; if(Math.abs((n/step)-Math.round(n/step))>tol) throw `${label}: invalid step`; }
+  return n;
+}
+function getInputs(){
+  const age   = mustNum(getAgeUsed(),18,100,"Age");
+  const sex   = mustNum(document.getElementById('sex').value,1,2,"Sex");
+  const weight= mustNum(document.getElementById('weight').value,30,250,"Weight(kg)");
+  const height= mustNum(document.getElementById('height').value,1.20,2.20,"Height(m)");
+  const waist = mustNum(document.getElementById('waist').value,40,200,"Waist(cm)");
+  const hip   = mustNum(document.getElementById('hip').value,40,200,"Hip(cm)");
+  let egfr    = null;
+  if(modelSel.value==='with') egfr = mustNum(document.getElementById('egfr').value,5,180,"eGFR");
+  return {age,sex,weight,height,waist,hip,egfr};
+}
+
+// LASI & risk
+function compute(modelKey,x){
+  const cfg = MODELS[modelKey];
+  let lasi = cfg.intercept;
+  Object.entries(cfg.betas).forEach(([k,b])=>{
+    lasi += b * x[k];
+  });
+  const S10 = Math.pow(cfg.S0_10, Math.exp(lasi));
+  return {lasi, S10, risk10: 1 - S10};
+}
+
+// “broken” survival curve that hits S(10)=S10 (for illustration only)
+function makeDemoCurve(S10){
+  // 13 nodes from 0..12y with gentle nonlinearity + stepiness
+  const T = 12;
+  const pts = [];
+  for(let t=0;t<=T;t++){
+    const frac = t/T;
+    // convex decay anchored at (10,S10). Use a Weibull‑like curve blended with linear.
+    const target10 = S10;
+    const base = Math.exp(-2.2*frac);           // smooth drop
+    const adj  = 1 - (1-target10)*(t/10)**1.3;  // force toward S10 near t=10
+    let s = 0.65*base + 0.35*adj;
+    if(t===0) s = 1.0;
+    if(t===10) s = target10;
+    if(t>10) s = Math.max(0.25, target10 - 0.03*(t-10)); // past 10y, tiny extra drop
+    // add small steps
+    if(t>0 && t<10 && t%2===1) s -= 0.02;
+    pts.push({t, s: Math.max(0, Math.min(1,s))});
+  }
+  return pts;
+}
+
+// draw plot
+function drawPlot(S10){
+  const cvs = document.getElementById('survPlot');
+  const ctx = cvs.getContext('2d');
+  ctx.clearRect(0,0,cvs.width,cvs.height);
+
+  const padL=45, padR=18, padT=16, padB=36;
+  const W=cvs.width-padL-padR, H=cvs.height-padT-padB;
+
+  const xs = t => padL + (t/12)*W;
+  const ys = s => padT + (1-s)*H;
+
+  // axes
+  ctx.strokeStyle="#cbd5e1"; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(padL,padT); ctx.lineTo(padL,padT+H); ctx.lineTo(padL+W,padT+H); ctx.stroke();
+
+  // y ticks
+  ctx.fillStyle="#475569"; ctx.font="12px system-ui";
+  [1.0,0.8,0.6,0.4,0.2,0].forEach(v=>{
+    const yy=ys(v);
+    ctx.strokeStyle="#eef2f7"; ctx.beginPath(); ctx.moveTo(padL,yy); ctx.lineTo(padL+W,yy); ctx.stroke();
+    ctx.fillText(v.toFixed(1), 6, yy+4);
+  });
+  // x ticks 0..12
+  for(let t=0;t<=12;t+=2){
+    const xx=xs(t);
+    ctx.fillText(String(t), xx-4, padT+H+18);
+  }
+
+  // vertical at 10y
+  ctx.setLineDash([5,6]); ctx.strokeStyle="#9ca3af";
+  ctx.beginPath(); ctx.moveTo(xs(10),padT); ctx.lineTo(xs(10),padT+H); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // curve
+  const pts = makeDemoCurve(S10);
+  ctx.strokeStyle="#2563eb"; ctx.lineWidth=2;
+  ctx.beginPath();
+  pts.forEach((p,i)=>{
+    if(i===0) ctx.moveTo(xs(p.t), ys(p.s));
+    else ctx.lineTo(xs(p.t), ys(p.s));
+  });
+  ctx.stroke();
+
+  // mark 10y point
+  const x10=xs(10), y10=ys(S10);
+  ctx.fillStyle="#1d4ed8";
+  ctx.beginPath(); ctx.arc(x10,y10,5,0,2*Math.PI); ctx.fill();
+
+  // label placed to the left, not clipped
+  const lbl = `S(10)=${S10.toFixed(3)}   Risk(10)=${(1-S10).toFixed(3)}`;
+  ctx.fillStyle="#111827"; ctx.font="13px system-ui";
+  const offX = Math.min( x10-10, padL+W-180 );
+  ctx.fillText(lbl, Math.max(padL+6, offX-140), y10-12);
+}
+
+// events
+document.getElementById('calcBtn').addEventListener('click', ()=>{
+  errBox.style.display='none';
+  try{
+    const x = getInputs();
+    const key = modelSel.value;
+    const res = compute(key,x);
+
+    document.getElementById('outCard').style.display='block';
+    document.getElementById('lasi').textContent  = fmt(res.lasi,3);
+    document.getElementById('s10').textContent   = pct(res.S10,1);
+    document.getElementById('risk10').textContent= pct(res.risk10,1);
+
+    // contributions table
+    const tbody = document.querySelector('#contribTbl tbody');
+    tbody.innerHTML='';
+    const names = {age:'Age (y)',sex:'Sex',weight:'Weight (kg)',height:'Height (m)',waist:'Waist (cm)',hip:'Hip (cm)',egfr:'eGFR'};
+    const cfg = MODELS[key];
+    let sumBx = cfg.intercept;
+    Object.entries(cfg.betas).forEach(([k,b])=>{
+      const val = x[k];
+      const row = document.createElement('tr');
+      row.innerHTML = `<td>${names[k]||k}</td><td>${fmt(val,3)}</td><td>${fmt(b,6)}</td><td>${fmt(b*val,4)}</td>`;
+      tbody.appendChild(row);
+      sumBx += b*val;
+    });
+    // draw survival
+    drawPlot(res.S10);
+
+  }catch(e){
+    errBox.textContent = "Please fix the following:\n" + e;
+    errBox.style.display = 'block';
+    document.getElementById('outCard').style.display='none';
+  }
+});
+</script>
+</body>
+</html>
